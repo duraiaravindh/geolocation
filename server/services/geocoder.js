@@ -61,3 +61,55 @@ export async function geocodeAddress(address) {
     geography,
   };
 }
+
+const COORD_BASE = 'https://geocoding.geo.census.gov/geocoder/geographies/coordinates';
+
+/**
+ * Reverse-geocode a lat/lng into Census geography (state / county / tract /
+ * block group), including human-readable state & county names. Used by the
+ * Census-geography validation mode, which is independent of any radius.
+ *
+ * @param {number} lat
+ * @param {number} lng
+ */
+export async function geocodeCoordinates(lat, lng) {
+  const params = new URLSearchParams({
+    x: String(lng),
+    y: String(lat),
+    benchmark: 'Public_AR_Current',
+    vintage: 'Current_Current',
+    format: 'json',
+  });
+
+  const res = await fetch(`${COORD_BASE}?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`Census geocoder returned HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  const geo = data?.result?.geographies || {};
+
+  const blocks = geo['2020 Census Blocks'] || [];
+  if (blocks.length === 0) {
+    throw new Error(
+      `No Census geography found for ${lat}, ${lng}. ` +
+        `The point may be outside the United States.`
+    );
+  }
+
+  const b = blocks[0];
+  const stateName = geo.States?.[0]?.NAME || null;
+  const countyName = geo.Counties?.[0]?.NAME || null;
+  const tractGeoid = `${b.STATE}${b.COUNTY}${b.TRACT}`;
+  const blockGroupGeoid = (b.GEOID || '').slice(0, 12);
+
+  return {
+    state: b.STATE,
+    county: b.COUNTY,
+    tract: b.TRACT,
+    blockGroup: b.BLKGRP,
+    tractGeoid,
+    blockGroupGeoid,
+    stateName,
+    countyName,
+  };
+}

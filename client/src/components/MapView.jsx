@@ -25,17 +25,82 @@ const PARCEL_STYLE = {
   fillOpacity: 0.25,
 };
 
-export default function MapView({ location, parcelPolygon, result, traffic }) {
+export default function MapView({ location, parcelPolygon, result, traffic, debug }) {
   const mapRef = useRef(null);
   const layersRef = useRef({});
 
   // Initialise the map once.
   useEffect(() => {
-    const map = L.map('map', { center: [39.5, -98.35], zoom: 4 });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
+    // Keep the canvas centred on Texas (all data is Texas-based).
+    const TX_BOUNDS = L.latLngBounds([25.5, -106.8], [36.8, -93.2]);
+    const map = L.map('map', {
+      zoomControl: false,
+      zoomSnap: 0.5,
+      minZoom: 5,
+      maxBounds: TX_BOUNDS.pad(0.25),
+      maxBoundsViscosity: 0.7,
+    });
+    map.fitBounds(TX_BOUNDS);
+    // Cleaner, lighter basemap (CARTO Voyager) so the data layers stand out.
+    const streets = L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      {
+        maxZoom: 20,
+        subdomains: 'abcd',
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      }
+    ).addTo(map);
+
+    // Satellite (Esri World Imagery) + a thin street/label overlay so roads
+    // stay readable over the aerial — handy for confirming a parcel on the ground.
+    const satellite = L.layerGroup([
+      L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 20, attribution: 'Tiles &copy; Esri' }
+      ),
+      L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
+        { maxZoom: 20, subdomains: 'abcd', opacity: 0.9 }
+      ),
+    ]);
+
+    L.control
+      .layers(
+        { Streets: streets, Satellite: satellite },
+        {},
+        { position: 'topright', collapsed: false }
+      )
+      .addTo(map);
+
+    L.control.zoom({ position: 'topright' }).addTo(map);
+    L.control.scale({ position: 'bottomleft', imperial: true, metric: false }).addTo(map);
+
+    // Legend overlay so the colours on the map are self-explanatory.
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = () => {
+      const div = L.DomUtil.create('div');
+      div.style.cssText =
+        'background:rgba(255,255,255,.92);padding:8px 10px;border-radius:10px;' +
+        'box-shadow:0 1px 4px rgba(0,0,0,.2);font:11px/1.4 system-ui,sans-serif;color:#334155;';
+      const row = (color, label, opts = {}) =>
+        `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">` +
+        `<span style="width:12px;height:12px;border-radius:${opts.round ? '50%' : '3px'};` +
+        `background:${color};${opts.border ? `border:2px solid ${opts.border};` : ''}` +
+        `${opts.dash ? 'background:transparent;border:2px dashed ' + color + ';' : ''}"></span>` +
+        `<span>${label}</span></div>`;
+      div.innerHTML =
+        `<div style="font-weight:600;color:#0f172a;margin-bottom:4px">Legend</div>` +
+        row('#2563eb', 'Searched location', { round: true }) +
+        row('#f97316', 'Parcel boundary', { dash: true }) +
+        row('#ef4444', 'Radius buffer', { dash: true }) +
+        row('#a855f7', 'Census block groups') +
+        row('#f59e0b', 'Traffic — on-system', { round: true, border: '#b45309' }) +
+        row('#3b82f6', 'Traffic — off-system', { round: true, border: '#1d4ed8' });
+      return div;
+    };
+    legend.addTo(map);
+
     mapRef.current = map;
     // Leaflet sometimes renders into a 0-height container on first paint.
     setTimeout(() => map.invalidateSize(), 0);
@@ -62,10 +127,12 @@ export default function MapView({ location, parcelPolygon, result, traffic }) {
         .bindPopup('Parcel boundary');
       layers.parcel.bringToFront();
       // Frame the parcel, then keep the marker visible on top.
-      map.fitBounds(layers.parcel.getBounds(), { padding: [60, 60], maxZoom: 18 });
+      map.fitBounds(layers.parcel.getBounds(), { padding: [80, 80], maxZoom: 19 });
     } else {
-      map.setView([location.lat, location.lng], 15);
+      // Smooth zoom in close on the searched point.
+      map.flyTo([location.lat, location.lng], 17, { duration: 0.7 });
     }
+    layers.marker.openPopup();
   }, [location, parcelPolygon]);
 
   // Draw the radius buffer + intersecting block groups when a result arrives.
@@ -80,6 +147,12 @@ export default function MapView({ location, parcelPolygon, result, traffic }) {
     if (!result) return;
 
     if (result.blockGroups?.length) {
+      // In debug mode, draw the intersecting block groups more boldly so it's
+      // obvious which geographies feed the radius estimate.
+      const bgStyle = debug
+        ? { color: '#7c3aed', weight: 2, fillColor: '#a855f7', fillOpacity: 0.18 }
+        : { color: '#0ea5e9', weight: 1, fillOpacity: 0.08 };
+
       layers.blockGroups = L.geoJSON(
         {
           type: 'FeatureCollection',
@@ -90,14 +163,19 @@ export default function MapView({ location, parcelPolygon, result, traffic }) {
           })),
         },
         {
-          style: { color: '#0ea5e9', weight: 1, fillOpacity: 0.08 },
+          style: bgStyle,
           onEachFeature: (feature, layer) => {
             const p = feature.properties;
+            const areaLine = debug
+              ? `Area in radius: ${(p.intersectionArea ?? 0).toLocaleString()} / ` +
+                `${(p.blockGroupArea ?? 0).toLocaleString()} m²<br/>`
+              : '';
             layer.bindPopup(
               `<b>Block Group ${p.geoid}</b><br/>` +
                 `Population: ${p.population.toLocaleString()}<br/>` +
+                areaLine +
                 `Overlap: ${p.weightPercent}%<br/>` +
-                `Contribution: ${p.contribution.toLocaleString()}`
+                `Weighted contribution: ${p.contribution.toLocaleString()}`
             );
           },
         }
@@ -112,8 +190,9 @@ export default function MapView({ location, parcelPolygon, result, traffic }) {
     layers.parcel?.bringToFront();
     layers.marker?.setZIndexOffset(1000);
 
-    map.fitBounds(layers.circle.getBounds(), { padding: [30, 30] });
-  }, [result]);
+    // Snug, animated framing of the radius buffer.
+    map.flyToBounds(layers.circle.getBounds(), { padding: [18, 18], duration: 0.7 });
+  }, [result, debug]);
 
   // Draw the traffic search radius + AADT station points.
   useEffect(() => {

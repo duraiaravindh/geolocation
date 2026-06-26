@@ -5,6 +5,7 @@ import { parseInput } from './services/parseInput.js';
 import { geocodeAddress } from './services/geocoder.js';
 import { lookupParcel } from './services/parcel.js';
 import { calculatePopulation, toMeters } from './services/population.js';
+import { validateCensusPopulation } from './services/validate.js';
 import { getTrafficCounts } from './services/trafficCounts.js';
 
 const app = express();
@@ -92,6 +93,64 @@ app.post('/api/population', async (req, res) => {
       input: { lat, lng, radius: radiusValue, unit },
       ...result,
     });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/population/validate?lat=..&lng=..
+ * Census Geography Population mode: reverse-geocode the point to its Census
+ * Tract + Block Group and return the official ACS population for each. Not
+ * radius-based, so it can be compared with FFIEC / Census websites.
+ */
+app.get('/api/population/validate', async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'lat and lng must be numbers' });
+    }
+    const result = await validateCensusPopulation({ lat, lng });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/population/radius?lat=..&lng=..&radius=..&unit=..&debug=true
+ * Area-weighted radius population. When debug=true the response includes a
+ * per-block-group `debug` breakdown (areas, overlap %, weighted population).
+ */
+app.get('/api/population/radius', async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radiusValue = Number(req.query.radius);
+    const unit = (req.query.unit || 'miles').toLowerCase();
+    const debug = ['1', 'true', 'yes'].includes(
+      String(req.query.debug || '').toLowerCase()
+    );
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'lat and lng must be numbers' });
+    }
+    if (!Number.isFinite(radiusValue) || radiusValue <= 0) {
+      return res.status(400).json({ error: 'radius must be a positive number' });
+    }
+
+    const radiusMeters = toMeters(radiusValue, unit);
+    const result = await calculatePopulation({ lat, lng, radiusMeters });
+
+    const payload = {
+      estimatedPopulation: result.estimatedPopulation,
+      radius: { value: radiusValue, unit },
+      blockGroupCount: result.blockGroupCount,
+      source: result.source,
+    };
+    if (debug) payload.debug = result.debug;
+    res.json(payload);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

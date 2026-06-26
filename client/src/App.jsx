@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import SearchPanel from './components/SearchPanel.jsx';
 import ResultsCard from './components/ResultsCard.jsx';
+import ValidationPanel from './components/ValidationPanel.jsx';
 import TrafficPanel from './components/TrafficPanel.jsx';
 import MapView from './components/MapView.jsx';
 import * as api from './api.js';
@@ -13,6 +14,10 @@ export default function App() {
   const [location, setLocation] = useState(null); // { lat, lng, label }
   const [parcelPolygon, setParcelPolygon] = useState(null);
   const [result, setResult] = useState(null);
+
+  // Population validation / debug state
+  const [validation, setValidation] = useState(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   // Traffic count state
   const [trafficRadius, setTrafficRadius] = useState(0.5);
@@ -28,6 +33,7 @@ export default function App() {
     setError('');
     setResult(null);
     setTrafficResult(null);
+    setValidation(null);
     setParcelPolygon(null);
     if (!query.trim()) {
       setError('Enter an address, parcel ID, or coordinates.');
@@ -66,7 +72,25 @@ export default function App() {
     }
   }
 
-  async function handleGetTraffic() {
+  async function handleValidate() {
+    if (!location) return;
+    setError('');
+    setLoading(true);
+    try {
+      const res = await api.validateCensusPopulation({
+        lat: location.lat,
+        lng: location.lng,
+      });
+      setValidation(res);
+    } catch (err) {
+      setValidation(null);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleGetTraffic(overrides = {}) {
     if (!location) return;
     setError('');
     setLoading(true);
@@ -74,8 +98,8 @@ export default function App() {
       const res = await api.getTrafficCounts({
         lat: location.lat,
         lng: location.lng,
-        radius: Number(trafficRadius),
-        unit: trafficUnit,
+        radius: overrides.radius ?? Number(trafficRadius),
+        unit: overrides.unit ?? trafficUnit,
         sort: trafficSort,
         roadNames: trafficRoadNames,
       });
@@ -88,10 +112,18 @@ export default function App() {
     }
   }
 
+  // "Match map view" preset — a ~1.5-mile radius covers the typical TxDOT
+  // STARS II map viewport, so the same stations line up for cross-checking.
+  function handleMatchMapView() {
+    setTrafficRadius(1.5);
+    setTrafficUnit('miles');
+    handleGetTraffic({ radius: 1.5, unit: 'miles' });
+  }
+
   return (
     <div className="flex h-screen w-screen flex-col">
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[360px_1fr]">
-        {/* Left: controls + results */}
+      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[360px_1fr_360px]">
+        {/* Left: search + population details */}
         <div className="flex flex-col gap-4 overflow-auto">
           <SearchPanel
             query={query}
@@ -124,6 +156,30 @@ export default function App() {
 
           <ResultsCard result={result} />
 
+          <ValidationPanel
+            onValidate={handleValidate}
+            hasLocation={Boolean(location)}
+            loading={loading}
+            validation={validation}
+            showDebug={showDebug}
+            setShowDebug={setShowDebug}
+            result={result}
+          />
+        </div>
+
+        {/* Center: map */}
+        <div className="order-first overflow-hidden rounded-xl border border-slate-200 shadow-sm lg:order-none">
+          <MapView
+            location={location}
+            parcelPolygon={parcelPolygon}
+            result={result}
+            traffic={trafficResult}
+            debug={showDebug}
+          />
+        </div>
+
+        {/* Right: traffic details */}
+        <div className="flex flex-col gap-4 overflow-auto">
           <TrafficPanel
             radius={trafficRadius}
             setRadius={setTrafficRadius}
@@ -134,19 +190,10 @@ export default function App() {
             roadNames={trafficRoadNames}
             setRoadNames={setTrafficRoadNames}
             onGet={handleGetTraffic}
+            onMatchMapView={handleMatchMapView}
             hasLocation={Boolean(location)}
             loading={loading}
             result={trafficResult}
-          />
-        </div>
-
-        {/* Right: map */}
-        <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
-          <MapView
-            location={location}
-            parcelPolygon={parcelPolygon}
-            result={result}
-            traffic={trafficResult}
           />
         </div>
       </div>

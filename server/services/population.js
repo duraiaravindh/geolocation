@@ -81,6 +81,12 @@ export async function calculatePopulation({ lat, lng, radiusMeters }) {
       weight: Number(c.weight.toFixed(4)),
       weightPercent: Number((c.weight * 100).toFixed(1)),
       contribution: Math.round(contribution),
+      // Raw areas (square meters) so the debug view can show the full
+      // overlap math: weightedPopulation = population × (interArea / bgArea).
+      blockGroupArea: Math.round(c.bgArea),
+      intersectionArea: Math.round(c.interArea),
+      overlapPercent: Number((c.weight * 100).toFixed(1)),
+      weightedPopulation: Math.round(contribution),
       geometry: c.geometry,
     };
   });
@@ -92,9 +98,18 @@ export async function calculatePopulation({ lat, lng, radiusMeters }) {
     radiusMeters,
     blockGroupCount: blockGroups.length,
     method: 'Area-weighted Census Block Groups',
-    source: `ACS ${config.acsYear} 5-Year Census`,
+    source: `ACS ${config.acsYear} 5-Year Census Block Groups`,
     circle, // GeoJSON polygon for the map
     circleArea,
     blockGroups,
+    // Geometry-free breakdown, matching the documented debug response shape.
+    debug: blockGroups.map((bg) => ({
+      geoid: bg.geoid,
+      population: bg.population,
+      blockGroupArea: bg.blockGroupArea,
+      intersectionArea: bg.intersectionArea,
+      overlapPercent: bg.overlapPercent,
+      weightedPopulation: bg.weightedPopulation,
+    })),
   };
 }

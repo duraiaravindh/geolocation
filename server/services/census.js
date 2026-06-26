@@ -62,6 +62,66 @@ export async function getPopulationByGeoid(geoids, variable = TOTAL_POPULATION) 
   return result;
 }
 
+/**
+ * Fetch a single ACS value for one specific geography (tract or block group).
+ * `forClause` / `inClause` are the raw Census API selectors, e.g.
+ *   for "tract:033200", in "state:48 county:453".
+ *
+ * @returns {Promise<number|null>} the value, or null when the geography has none
+ */
+async function fetchSingleValue(forClause, inClause, variable) {
+  const base = `https://api.census.gov/data/${config.acsYear}/acs/acs5`;
+  const url =
+    `${base}?get=${variable}` +
+    `&for=${encodeURIComponent(forClause)}` +
+    `&in=${encodeURIComponent(inClause)}` +
+    `&key=${config.censusApiKey}`;
+
+  const res = await fetch(url);
+  const text = await res.text();
+  if (!res.ok || text.trimStart().startsWith('<')) {
+    const snippet = text.replace(/\s+/g, ' ').slice(0, 200);
+    throw new Error(`Census ACS API error (${res.status}): ${snippet}`);
+  }
+
+  const data = JSON.parse(text);
+  if (!Array.isArray(data) || data.length < 2) return null;
+  const valIdx = data[0].indexOf(variable);
+  const raw = Number(data[1][valIdx]);
+  return Number.isFinite(raw) && raw >= 0 ? raw : null;
+}
+
+function ensureKey() {
+  if (!config.censusApiKey) {
+    throw new Error(
+      'Missing CENSUS_API_KEY. The ACS population step requires a free key — ' +
+        'sign up at https://api.census.gov/data/key_signup.html and set it in server/.env'
+    );
+  }
+}
+
+/** Total population for a single Census Tract. */
+export function getTractPopulation(state, county, tract, variable = TOTAL_POPULATION) {
+  ensureKey();
+  return fetchSingleValue(`tract:${tract}`, `state:${state} county:${county}`, variable);
+}
+
+/** Total population for a single Census Block Group. */
+export function getBlockGroupPopulation(
+  state,
+  county,
+  tract,
+  blockGroup,
+  variable = TOTAL_POPULATION
+) {
+  ensureKey();
+  return fetchSingleValue(
+    `block group:${blockGroup}`,
+    `state:${state} county:${county} tract:${tract}`,
+    variable
+  );
+}
+
 async function fetchCounty(state, county, variable) {
   const base = `https://api.census.gov/data/${config.acsYear}/acs/acs5`;
   // `in` clause: all block groups in every tract of this county.

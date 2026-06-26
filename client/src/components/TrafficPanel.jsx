@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 const UNITS = ['Miles', 'Kilometers', 'Meters', 'Feet'];
 
 const SORTS = [
@@ -16,6 +18,7 @@ export default function TrafficPanel({
   roadNames,
   setRoadNames,
   onGet,
+  onMatchMapView,
   hasLocation,
   loading,
   result,
@@ -87,11 +90,21 @@ export default function TrafficPanel({
 
       <button
         type="button"
-        onClick={onGet}
+        onClick={() => onGet()}
         disabled={!hasLocation || loading}
         className="mt-4 w-full rounded-lg bg-amber-500 py-2.5 text-sm font-semibold text-white hover:bg-amber-400 disabled:opacity-50"
       >
         {loading ? 'Loading…' : 'Get Traffic Counts'}
+      </button>
+
+      <button
+        type="button"
+        onClick={onMatchMapView}
+        disabled={!hasLocation || loading}
+        title="Set a ~1.5-mile radius to match the TxDOT STARS II map viewport"
+        className="mt-2 w-full rounded-lg border border-amber-300 bg-amber-50 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+      >
+        Match map view (1.5 mi · TxDOT cross-check)
       </button>
       {!hasLocation && (
         <p className="mt-2 text-center text-xs text-slate-400">Find a location first.</p>
@@ -103,6 +116,8 @@ export default function TrafficPanel({
 }
 
 function TrafficResults({ result }) {
+  const [showDebug, setShowDebug] = useState(false);
+
   if (result.count === 0) {
     return (
       <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -153,6 +168,100 @@ function TrafficResults({ result }) {
           </tbody>
         </table>
       </div>
+
+      <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          checked={showDebug}
+          onChange={(e) => setShowDebug(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+        />
+        Show Traffic Debug Details
+      </label>
+
+      {showDebug && <TrafficDebug result={result} />}
+    </div>
+  );
+}
+
+/**
+ * Station-based cross-check table. Unlike population, traffic counts are NOT
+ * area-weighted — each row is one TxDOT station, shown with every field needed
+ * to look it up in TxDOT STARS II / TCDS and confirm the AADT + year match.
+ */
+function TrafficDebug({ result }) {
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">Traffic Count Validation</h3>
+        {result.sourcePortalUrl && (
+          <a
+            href={result.sourcePortalUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-medium text-amber-600 hover:underline"
+          >
+            Open TxDOT STARS II ↗
+          </a>
+        )}
+      </div>
+      <p className="mt-1 text-[11px] text-slate-500">
+        Search a <span className="font-medium">Station ID</span> (or road + county) in
+        STARS II and confirm the AADT &amp; year match. Stations are not
+        area-weighted — each row is one count location.
+      </p>
+
+      <div className="mt-2 max-h-80 overflow-auto">
+        <table className="w-full text-left text-[11px]">
+          <thead className="sticky top-0 bg-white text-slate-400">
+            <tr>
+              <th className="py-1 pr-2">Station ID</th>
+              <th className="py-1 pr-2">Road</th>
+              <th className="py-1 pr-2 text-right">AADT</th>
+              <th className="py-1 pr-2 text-right">Year</th>
+              <th className="py-1 pr-2 text-right">Dist.</th>
+              <th className="py-1 pr-2">Lat / Lon</th>
+              <th className="py-1 pr-2">Source</th>
+              <th className="py-1">Verify</th>
+            </tr>
+          </thead>
+          <tbody className="text-slate-700">
+            {result.trafficCounts.map((t, i) => (
+              <tr key={`dbg-${t.stationId}-${i}`} className="border-t border-slate-100 align-top">
+                <td className="py-1 pr-2 font-mono">{t.stationId ?? '—'}</td>
+                <td className="py-1 pr-2">{t.roadName}</td>
+                <td className="py-1 pr-2 text-right">
+                  {t.aadt != null ? t.aadt.toLocaleString() : '—'}
+                </td>
+                <td className="py-1 pr-2 text-right">{t.year ?? '—'}</td>
+                <td className="py-1 pr-2 text-right">{t.distanceMiles} mi</td>
+                <td className="py-1 pr-2 font-mono">
+                  {t.lat != null && t.lng != null
+                    ? `${t.lat.toFixed(5)}, ${t.lng.toFixed(5)}`
+                    : '—'}
+                </td>
+                <td className="py-1 pr-2">
+                  {t.source}
+                  {t.county ? <span className="text-slate-400"> · {t.county}</span> : null}
+                </td>
+                <td className="py-1 space-x-2 whitespace-nowrap">
+                  {t.sourceUrl && (
+                    <a href={t.sourceUrl} target="_blank" rel="noreferrer" className="text-amber-600 hover:underline">
+                      STARS II
+                    </a>
+                  )}
+                  {t.mapUrl && (
+                    <a href={t.mapUrl} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">
+                      Map
+                    </a>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1 text-[10px] text-slate-400">Source: {result.source}</p>
     </div>
   );
 }

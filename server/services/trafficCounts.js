@@ -22,6 +22,11 @@ import { getRoadName } from './reverseGeocode.js';
 const MAX_ROAD_NAME_LOOKUPS = 15;
 const OFF_SYSTEM_LABEL = 'Local road (off-system)';
 
+// TxDOT STARS II / TCDS public portal — where a user can look up a Station ID
+// or road name and confirm the AADT/year against the official source.
+const STARS_II_URL =
+  'https://txdot.public.ms2soft.com/tcds/tsearch.asp?loc=Txdot&mod=TCDS';
+
 const ORG =
   'https://services.arcgis.com/KTcxiTD9dsQw4r7Z/arcgis/rest/services';
 
@@ -151,6 +156,10 @@ export async function getTrafficCounts({
       ...record,
       distanceMiles: Number((distMeters / 1609.344).toFixed(2)),
       distanceMeters: Math.round(distMeters),
+      // Official source to cross-check this station (Station ID / road / AADT).
+      sourceUrl: STARS_II_URL,
+      // Quick "is the station really near the parcel?" check.
+      mapUrl: `https://www.google.com/maps?q=${record.lat},${record.lng}`,
     };
 
     // If the same station appears in both datasets, keep the one with a real
@@ -188,6 +197,8 @@ export async function getTrafficCounts({
     radius: { value: Number(radius), unit, meters: Number(radiusMeters.toFixed(2)) },
     count: trafficCounts.length,
     sort,
+    source: 'TxDOT Statewide Traffic Monitoring Program (STARS II / TCDS)',
+    sourcePortalUrl: STARS_II_URL,
     trafficCounts,
   };
 }

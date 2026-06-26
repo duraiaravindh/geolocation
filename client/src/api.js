@@ -19,6 +19,16 @@ export function calculatePopulation({ lat, lng, radius, unit }) {
   return postJson('/api/population', { lat, lng, radius, unit });
 }
 
+export async function validateCensusPopulation({ lat, lng }) {
+  const params = new URLSearchParams({ lat, lng });
+  const res = await fetch(`/api/population/validate?${params.toString()}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed (HTTP ${res.status})`);
+  }
+  return data;
+}
+
 export async function getTrafficCounts({
   lat,
   lng,
