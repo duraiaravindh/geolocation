@@ -22,24 +22,29 @@ export function toMeters(value, unit) {
 }
 
 /**
+ * Build the circular buffer, find intersecting Census Block Groups, and compute
+ * each one's area-overlap weight. Shared by the population and demographic
+ * calculators so the spatial logic lives in one place.
+ *
  * @param {object} opts
  * @param {number} opts.lat
  * @param {number} opts.lng
  * @param {number} opts.radiusMeters
+ * @returns {Promise<{circle: object, circleArea: number, contributions: Array}>}
  */
-export async function calculatePopulation({ lat, lng, radiusMeters }) {
+export async function computeBlockGroupWeights({ lat, lng, radiusMeters }) {
   const center = [lng, lat];
   const radiusKm = radiusMeters / 1000;
 
-  // Step 6 — circular buffer around the point.
+  // Circular buffer around the point.
   const circle = turf.circle(center, radiusKm, { steps: 128, units: 'kilometers' });
   const circleArea = turf.area(circle);
 
-  // Step 7 — intersecting block groups (queried by the circle's bbox).
+  // Intersecting block groups (queried by the circle's bbox).
   const bbox = turf.bbox(circle);
   const features = await getBlockGroups(bbox);
 
-  // Step 8 — spatial intersection + area weighting.
+  // Spatial intersection + area weighting.
   const contributions = [];
   for (const feature of features) {
     let intersection = null;
@@ -64,6 +69,22 @@ export async function calculatePopulation({ lat, lng, radiusMeters }) {
       interArea,
     });
   }
+
+  return { circle, circleArea, contributions };
+}
+
+/**
+ * @param {object} opts
+ * @param {number} opts.lat
+ * @param {number} opts.lng
+ * @param {number} opts.radiusMeters
+ */
+export async function calculatePopulation({ lat, lng, radiusMeters }) {
+  const { circle, circleArea, contributions } = await computeBlockGroupWeights({
+    lat,
+    lng,
+    radiusMeters,
+  });
 
   // Step 9 — populations for the intersecting block groups.
   const geoids = contributions.map((c) => c.geoid);

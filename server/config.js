@@ -19,6 +19,9 @@ export const config = {
   // If DATABASE_URL is empty, the app falls back to the built-in sample parcel.
   databaseUrl: process.env.DATABASE_URL || '',
   dbSsl: String(process.env.DB_SSL || '').toLowerCase() === 'true',
+  // Optional: when the parcel dataset was last refreshed (shown in the
+  // Real Estate Summary so users know how current the data is).
+  parcelDataUpdated: process.env.PARCEL_DATA_UPDATED || '',
   parcel: {
     table: process.env.PARCEL_TABLE || 'attom_dataset.boundaries',
     idCol: process.env.PARCEL_ID_COL || 'apn',

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import { PLACE_META } from '../placeCategories.js';
 
 // Reliable marker icons. Bundled PNG imports often break the icon under Vite,
 // so we point Leaflet's default icon at the CDN copies (same version as the CSS).
@@ -25,7 +26,28 @@ const PARCEL_STYLE = {
   fillOpacity: 0.25,
 };
 
-export default function MapView({ location, parcelPolygon, result, traffic, debug }) {
+function placeIcon(color, emoji) {
+  return L.divIcon({
+    className: 'place-marker',
+    html:
+      `<div style="display:flex;align-items:center;justify-content:center;` +
+      `width:24px;height:24px;border-radius:50%;background:#fff;` +
+      `border:2px solid ${color};box-shadow:0 1px 3px rgba(0,0,0,.3);font-size:13px;">${emoji}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
+  });
+}
+
+export default function MapView({
+  location,
+  parcelPolygon,
+  result,
+  traffic,
+  debug,
+  places,
+  placeVisible,
+}) {
   const mapRef = useRef(null);
   const layersRef = useRef({});
 
@@ -240,6 +262,48 @@ export default function MapView({ location, parcelPolygon, result, traffic, debu
 
     map.fitBounds(layers.trafficCircle.getBounds(), { padding: [40, 40] });
   }, [traffic]);
+
+  // Draw nearby place markers (respecting per-category visibility toggles).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const layers = layersRef.current;
+
+    layers.places?.remove();
+    if (!places?.places) return;
+
+    const markers = [];
+    for (const [cat, list] of Object.entries(places.places)) {
+      if (placeVisible && placeVisible[cat] === false) continue;
+      const meta = PLACE_META[cat];
+      if (!meta) continue;
+      const icon = placeIcon(meta.color, meta.emoji);
+      for (const p of list) {
+        markers.push(
+          L.marker([p.lat, p.lng], { icon }).bindPopup(
+            `<b>${p.name || meta.label}</b><br/>` +
+              `${meta.label}${p.type ? ` · ${p.type}` : ''}<br/>` +
+              `Distance: ${p.distanceMiles} mi`
+          )
+        );
+      }
+    }
+    layers.places = L.layerGroup(markers).addTo(map);
+  }, [places, placeVisible]);
+
+  // Frame all nearby places when a new search arrives (not on toggle).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !places?.places) return;
+    const pts = [];
+    for (const list of Object.values(places.places)) {
+      for (const p of list) pts.push([p.lat, p.lng]);
+    }
+    if (places.center) pts.push([places.center.lat, places.center.lng]);
+    if (pts.length > 1) {
+      map.flyToBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 16, duration: 0.7 });
+    }
+  }, [places]);
 
   return <div id="map" className="h-full w-full" />;
 }

@@ -14,9 +14,9 @@ export default function SearchPanel({
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h1 className="text-lg font-semibold text-slate-800">Population Within Radius</h1>
+      <h2 className="text-lg font-semibold text-slate-800">Search</h2>
       <p className="mt-1 text-xs text-slate-500">
-        Search by address, parcel address, Parcel ID, or latitude/longitude.
+        By address, parcel address, Parcel ID, or latitude/longitude.
       </p>
 
       <form
@@ -40,7 +40,7 @@ export default function SearchPanel({
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-slate-800 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+          className="w-full rounded-lg bg-sky-600 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
         >
           Find Location
         </button>

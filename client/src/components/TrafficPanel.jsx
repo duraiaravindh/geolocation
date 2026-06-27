@@ -92,7 +92,7 @@ export default function TrafficPanel({
         type="button"
         onClick={() => onGet()}
         disabled={!hasLocation || loading}
-        className="mt-4 w-full rounded-lg bg-amber-500 py-2.5 text-sm font-semibold text-white hover:bg-amber-400 disabled:opacity-50"
+        className="mt-4 w-full rounded-lg bg-sky-600 py-2.5 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
       >
         {loading ? 'Loading…' : 'Get Traffic Counts'}
       </button>
@@ -102,7 +102,7 @@ export default function TrafficPanel({
         onClick={onMatchMapView}
         disabled={!hasLocation || loading}
         title="Set a ~1.5-mile radius to match the TxDOT STARS II map viewport"
-        className="mt-2 w-full rounded-lg border border-amber-300 bg-amber-50 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+        className="mt-2 w-full rounded-lg border border-sky-300 bg-sky-50 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
       >
         Match map view (1.5 mi · TxDOT cross-check)
       </button>

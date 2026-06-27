@@ -19,9 +19,40 @@ export function calculatePopulation({ lat, lng, radius, unit }) {
   return postJson('/api/population', { lat, lng, radius, unit });
 }
 
+export async function getRealEstateSummary({
+  lat,
+  lng,
+  radius,
+  unit,
+  address,
+  parcelId,
+  county,
+}) {
+  const params = new URLSearchParams({ lat, lng, radius, unit });
+  if (address) params.set('address', address);
+  if (parcelId) params.set('parcelId', parcelId);
+  if (county) params.set('county', county);
+  const res = await fetch(`/api/real-estate-summary?${params.toString()}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed (HTTP ${res.status})`);
+  }
+  return data;
+}
+
 export async function validateCensusPopulation({ lat, lng }) {
   const params = new URLSearchParams({ lat, lng });
   const res = await fetch(`/api/population/validate?${params.toString()}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed (HTTP ${res.status})`);
+  }
+  return data;
+}
+
+export async function getNearbyPlaces({ lat, lng, radius, unit }) {
+  const params = new URLSearchParams({ lat, lng, radius, unit });
+  const res = await fetch(`/api/places?${params.toString()}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.error || `Request failed (HTTP ${res.status})`);

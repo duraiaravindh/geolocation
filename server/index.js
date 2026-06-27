@@ -7,6 +7,9 @@ import { lookupParcel } from './services/parcel.js';
 import { calculatePopulation, toMeters } from './services/population.js';
 import { validateCensusPopulation } from './services/validate.js';
 import { getTrafficCounts } from './services/trafficCounts.js';
+import { getNearbyPlaces } from './services/places.js';
+import { buildRealEstateSummary } from './services/summary.js';
+import { calculateDemographics } from './services/demographics.js';
 
 const app = express();
 app.use(cors());
@@ -157,6 +160,81 @@ app.get('/api/population/radius', async (req, res) => {
 });
 
 /**
+ * GET /api/demographics?lat=..&lng=..&radius=..&unit=..&debug=true
+ * Area-weighted ACS demographic profile within the radius (population,
+ * households, median income/age, housing units, owner/renter). debug=true
+ * adds the per-block-group breakdown.
+ */
+app.get('/api/demographics', async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radiusValue = Number(req.query.radius);
+    const unit = (req.query.unit || 'miles').toLowerCase();
+    const debug = ['1', 'true', 'yes'].includes(
+      String(req.query.debug || '').toLowerCase()
+    );
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'lat and lng must be numbers' });
+    }
+    if (!Number.isFinite(radiusValue) || radiusValue <= 0) {
+      return res.status(400).json({ error: 'radius must be a positive number' });
+    }
+
+    const radiusMeters = toMeters(radiusValue, unit);
+    const result = await calculateDemographics({ lat, lng, radiusMeters });
+
+    const payload = {
+      radius: { value: radiusValue, unit },
+      blockGroupCount: result.blockGroupCount,
+      method: result.method,
+      source: result.source,
+      demographics: result.demographics,
+    };
+    if (debug) payload.debug = result.blockGroups;
+    res.json(payload);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/real-estate-summary?lat=..&lng=..&radius=..&unit=..
+ * Optional passthrough identity params: address, parcelId, county, state.
+ * Bundles the existing parcel/population/traffic outputs into one summary.
+ */
+app.get('/api/real-estate-summary', async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radius = Number(req.query.radius);
+    const unit = (req.query.unit || 'miles').toLowerCase();
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'lat and lng must be numbers' });
+    }
+    if (!Number.isFinite(radius) || radius <= 0) {
+      return res.status(400).json({ error: 'radius must be a positive number' });
+    }
+
+    const summary = await buildRealEstateSummary({
+      lat,
+      lng,
+      radius,
+      unit,
+      address: req.query.address,
+      parcelId: req.query.parcelId,
+      county: req.query.county,
+      state: req.query.state,
+    });
+    res.json(summary);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/traffic-counts?lat=..&lng=..&radius=..&unit=..&sort=..
  * Returns nearby TxDOT AADT traffic count stations within the radius,
  * sorted by distance (default), AADT, or year.
@@ -180,6 +258,32 @@ app.get('/api/traffic-counts', async (req, res) => {
     }
 
     const result = await getTrafficCounts({ lat, lng, radius, unit, sort, resolveRoadNames });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/places?lat=..&lng=..&radius=..&unit=..
+ * Nearby OSM points of interest grouped by category (restaurants, schools,
+ * hospitals, apartments, retail).
+ */
+app.get('/api/places', async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radius = Number(req.query.radius);
+    const unit = (req.query.unit || 'miles').toLowerCase();
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'lat and lng must be numbers' });
+    }
+    if (!Number.isFinite(radius) || radius <= 0) {
+      return res.status(400).json({ error: 'radius must be a positive number' });
+    }
+
+    const result = await getNearbyPlaces({ lat, lng, radius, unit });
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
