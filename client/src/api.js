@@ -15,6 +15,23 @@ export function search(query) {
   return postJson('/api/search', { query });
 }
 
+// --- Smart Search & Business Intelligence ---
+export function smartSearch(query) {
+  return postJson('/api/smart-search', { query });
+}
+
+async function getJson(url) {
+  const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (HTTP ${res.status})`);
+  return data;
+}
+
+export const getParcelProperty = (id) => getJson(`/api/parcel/${encodeURIComponent(id)}/property`);
+export const getParcelAdjacent = (id) => getJson(`/api/parcel/${encodeURIComponent(id)}/adjacent`);
+export const getParcelBusinesses = (id) => getJson(`/api/parcel/${encodeURIComponent(id)}/businesses`);
+export const getGoogleUsage = () => getJson('/api/google-usage');
+
 export function calculatePopulation({ lat, lng, radius, unit }) {
   return postJson('/api/population', { lat, lng, radius, unit });
 }
@@ -33,26 +50,6 @@ export async function getRealEstateSummary({
   if (parcelId) params.set('parcelId', parcelId);
   if (county) params.set('county', county);
   const res = await fetch(`/api/real-estate-summary?${params.toString()}`);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || `Request failed (HTTP ${res.status})`);
-  }
-  return data;
-}
-
-export async function validateCensusPopulation({ lat, lng }) {
-  const params = new URLSearchParams({ lat, lng });
-  const res = await fetch(`/api/population/validate?${params.toString()}`);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || `Request failed (HTTP ${res.status})`);
-  }
-  return data;
-}
-
-export async function getNearbyPlaces({ lat, lng, radius, unit }) {
-  const params = new URLSearchParams({ lat, lng, radius, unit });
-  const res = await fetch(`/api/places?${params.toString()}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.error || `Request failed (HTTP ${res.status})`);

@@ -15,6 +15,22 @@
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
+
+    <!-- Permanent AADT / road-name labels on traffic markers -->
+    <style>
+      .aadt-label {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        padding: 1px 5px;
+        font: 600 10px/1.25 system-ui, sans-serif;
+        color: #1e293b;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .aadt-label::before { display: none; } /* hide the tooltip arrow */
+    </style>
   </head>
   <body class="bg-slate-100">
     <div id="root"></div>

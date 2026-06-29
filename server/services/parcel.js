@@ -28,9 +28,10 @@ export async function lookupParcel(parcelId) {
   return lookupSample(id);
 }
 
-async function lookupFromDb(pool, id) {
+// Shared SELECT list + row mapper for the configured parcel table.
+function parcelSelects() {
   const p = config.parcel;
-  const selects = [
+  return [
     `${q(p.idCol)} AS parcel_id`,
     `${q(p.latCol)} AS lat`,
     `${q(p.lngCol)} AS lng`,
@@ -39,11 +40,36 @@ async function lookupFromDb(pool, id) {
     // Return the parcel boundary as GeoJSON when a geometry column is set.
     p.geomCol ? `ST_AsGeoJSON(${q(p.geomCol)}) AS geojson` : `NULL AS geojson`,
   ].join(', ');
+}
 
+function rowToParcel(r) {
+  const lat = Number(r.lat);
+  const lng = Number(r.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  let polygon = null;
+  if (r.geojson) {
+    try {
+      polygon = JSON.parse(r.geojson);
+    } catch {
+      polygon = null;
+    }
+  }
+  return {
+    parcelId: String(r.parcel_id),
+    address: r.address || null,
+    county: r.county || null,
+    polygon,
+    lat,
+    lng,
+  };
+}
+
+async function lookupFromDb(pool, id) {
+  const p = config.parcel;
   // Match on text form (case- and whitespace-insensitive) so numeric and
   // alphanumeric parcel numbers both resolve regardless of how they're typed.
   const sql =
-    `SELECT ${selects} FROM ${qTable(p.table)} ` +
+    `SELECT ${parcelSelects()} FROM ${qTable(p.table)} ` +
     `WHERE upper(btrim(${q(p.idCol)}::text)) = upper(btrim($1)) LIMIT 1`;
 
   let rows;
@@ -59,31 +85,44 @@ async function lookupFromDb(pool, id) {
   if (rows.length === 0) {
     throw new Error(`Parcel "${id}" not found in the parcel database.`);
   }
-
-  const r = rows[0];
-  const lat = Number(r.lat);
-  const lng = Number(r.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  const parcel = rowToParcel(rows[0]);
+  if (!parcel) {
     throw new Error(`Parcel "${id}" has no valid latitude/longitude in the database.`);
   }
+  return parcel;
+}
 
-  let polygon = null;
-  if (r.geojson) {
-    try {
-      polygon = JSON.parse(r.geojson);
-    } catch {
-      polygon = null;
-    }
-  }
+/**
+ * Internal address search — matches the street line (before the first comma)
+ * against the parcel table. Returns the parcel or null (no throw), so callers
+ * can fall back to geocoding.
+ */
+export async function lookupParcelByAddress(address) {
+  const pool = getPool();
+  const p = config.parcel;
+  if (!pool || !p.addrCol) return null;
+  const street = String(address).split(',')[0].trim();
+  if (!street) return null;
+  const sql =
+    `SELECT ${parcelSelects()} FROM ${qTable(p.table)} ` +
+    `WHERE ${q(p.addrCol)} ILIKE $1 ORDER BY length(${q(p.addrCol)}) LIMIT 1`;
+  const { rows } = await pool.query(sql, [`%${street}%`]);
+  return rows.length ? rowToParcel(rows[0]) : null;
+}
 
-  return {
-    parcelId: String(r.parcel_id),
-    address: r.address || null,
-    county: r.county || null,
-    polygon,
-    lat,
-    lng,
-  };
+/**
+ * Find the parcel whose boundary contains a point (used after geocoding a
+ * lat/lng). Returns the parcel or null.
+ */
+export async function findParcelByPoint(lat, lng) {
+  const pool = getPool();
+  const p = config.parcel;
+  if (!pool || !p.geomCol) return null;
+  const sql =
+    `SELECT ${parcelSelects()} FROM ${qTable(p.table)} ` +
+    `WHERE ST_Contains(${q(p.geomCol)}, ST_SetSRID(ST_Point($1, $2), 4326)) LIMIT 1`;
+  const { rows } = await pool.query(sql, [lng, lat]);
+  return rows.length ? rowToParcel(rows[0]) : null;
 }
 
 // --- Built-in sample (used only when no DATABASE_URL is set) ---

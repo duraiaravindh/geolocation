@@ -8,8 +8,6 @@ export default function SearchPanel({
   unit,
   setUnit,
   onSearch,
-  onCalculate,
-  hasLocation,
   loading,
 }) {
   return (
@@ -26,28 +24,25 @@ export default function SearchPanel({
           onSearch();
         }}
       >
-        <div>
-          <label className="text-xs font-medium text-slate-600">Search</label>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="725 FM 1626, Austin, TX  ·  Parcel ID: 123456789  ·  30.13672,-97.84221"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-          />
-        </div>
-
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="725 FM 1626, Austin, TX  ·  Parcel ID: 123456789  ·  30.13672,-97.84221"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+        />
         <button
           type="submit"
           disabled={loading}
           className="w-full rounded-lg bg-sky-600 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
         >
-          Find Location
+          {loading ? 'Working…' : 'Find Location'}
         </button>
       </form>
 
       <div className="my-4 border-t border-slate-100" />
 
+      {/* Shared radius + unit — used by Population, Demographics & Traffic. */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-xs font-medium text-slate-600">Radius</label>
@@ -75,18 +70,9 @@ export default function SearchPanel({
           </select>
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={onCalculate}
-        disabled={!hasLocation || loading}
-        className="mt-4 w-full rounded-lg bg-sky-600 py-2.5 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
-      >
-        {loading ? 'Calculating…' : 'Calculate Population'}
-      </button>
-      {!hasLocation && (
-        <p className="mt-2 text-center text-xs text-slate-400">Find a location first.</p>
-      )}
+      <p className="mt-2 text-[11px] text-slate-400">
+        Applies to Population, Demographics &amp; Traffic.
+      </p>
     </div>
   );
 }

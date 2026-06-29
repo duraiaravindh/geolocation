@@ -10,6 +10,10 @@ import { getTrafficCounts } from './services/trafficCounts.js';
 import { getNearbyPlaces } from './services/places.js';
 import { buildRealEstateSummary } from './services/summary.js';
 import { calculateDemographics } from './services/demographics.js';
+import { smartSearch } from './services/smartSearch.js';
+import { getPropertyDetails } from './services/property.js';
+import { getAdjacentParcels } from './services/adjacent.js';
+import { getUsage, placesNearby } from './services/googleClient.js';
 
 const app = express();
 app.use(cors());
@@ -285,6 +289,77 @@ app.get('/api/places', async (req, res) => {
 
     const result = await getNearbyPlaces({ lat, lng, radius, unit });
     res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// === Smart Search & Business Intelligence module ===
+
+/**
+ * POST /api/smart-search  { query }
+ * One box for Address / Parcel ID / Lat,Lng. Internal-DB-first, then Google
+ * (cached + capped), then Census fallback. Returns parcel + property + usage.
+ */
+app.post('/api/smart-search', async (req, res) => {
+  try {
+    const { query } = req.body || {};
+    if (!query || !String(query).trim()) {
+      return res.status(400).json({ error: 'query is required' });
+    }
+    const result = await smartSearch(String(query).trim());
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/** GET /api/parcel/:id/property → internal property details. */
+app.get('/api/parcel/:id/property', async (req, res) => {
+  try {
+    const property = await getPropertyDetails(req.params.id);
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+    res.json(property);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/** GET /api/parcel/:id/adjacent → parcels touching (or within 15 m of) this one. */
+app.get('/api/parcel/:id/adjacent', async (req, res) => {
+  try {
+    const parcels = await getAdjacentParcels(req.params.id);
+    res.json({ parcelId: req.params.id, count: parcels.length, parcels });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/parcel/:id/businesses → nearby businesses (Google Places, cached +
+ * capped). Searches 50 → 100 → 200 m around the parcel centroid.
+ */
+app.get('/api/parcel/:id/businesses', async (req, res) => {
+  try {
+    const parcel = await lookupParcel(req.params.id);
+    const result = await placesNearby(parcel.lat, parcel.lng);
+    res.json({
+      parcelId: req.params.id,
+      source: result.source,
+      note: result.reason || null,
+      count: result.value?.length || 0,
+      businesses: result.value || [],
+      usage: await getUsage(),
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/** GET /api/google-usage → monthly usage counter (used / limit / remaining). */
+app.get('/api/google-usage', async (_req, res) => {
+  try {
+    res.json(await getUsage());
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

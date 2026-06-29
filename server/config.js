@@ -15,6 +15,13 @@ export const config = {
   // Layer 10 = "Census Block Groups" in the TIGERweb ACS map services
   blockGroupLayer: 10,
 
+  // --- Google Maps Platform (Geocoding + Places) ---
+  // Geocoding fallback + nearby business search. Strictly capped per month and
+  // cached (see services/googleClient.js). Empty key = Google disabled.
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+  googleMonthlyLimit: Number(process.env.GOOGLE_MONTHLY_LIMIT || 4000),
+  googleCacheDays: Number(process.env.GOOGLE_CACHE_DAYS || 30),
+
   // --- Parcel database (PostgreSQL / PostGIS) ---
   // If DATABASE_URL is empty, the app falls back to the built-in sample parcel.
   databaseUrl: process.env.DATABASE_URL || '',

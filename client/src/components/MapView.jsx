@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import { PLACE_META } from '../placeCategories.js';
 
 // Reliable marker icons. Bundled PNG imports often break the icon under Vite,
 // so we point Leaflet's default icon at the CDN copies (same version as the CSS).
@@ -26,27 +25,15 @@ const PARCEL_STYLE = {
   fillOpacity: 0.25,
 };
 
-function placeIcon(color, emoji) {
-  return L.divIcon({
-    className: 'place-marker',
-    html:
-      `<div style="display:flex;align-items:center;justify-content:center;` +
-      `width:24px;height:24px;border-radius:50%;background:#fff;` +
-      `border:2px solid ${color};box-shadow:0 1px 3px rgba(0,0,0,.3);font-size:13px;">${emoji}</div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -12],
-  });
-}
-
 export default function MapView({
   location,
   parcelPolygon,
   result,
   traffic,
   debug,
-  places,
-  placeVisible,
+  adjacent,
+  businesses,
+  onSelectParcel,
 }) {
   const mapRef = useRef(null);
   const layersRef = useRef({});
@@ -98,35 +85,19 @@ export default function MapView({
     L.control.zoom({ position: 'topright' }).addTo(map);
     L.control.scale({ position: 'bottomleft', imperial: true, metric: false }).addTo(map);
 
-    // Legend overlay so the colours on the map are self-explanatory.
-    const legend = L.control({ position: 'bottomright' });
-    legend.onAdd = () => {
-      const div = L.DomUtil.create('div');
-      div.style.cssText =
-        'background:rgba(255,255,255,.92);padding:8px 10px;border-radius:10px;' +
-        'box-shadow:0 1px 4px rgba(0,0,0,.2);font:11px/1.4 system-ui,sans-serif;color:#334155;';
-      const row = (color, label, opts = {}) =>
-        `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">` +
-        `<span style="width:12px;height:12px;border-radius:${opts.round ? '50%' : '3px'};` +
-        `background:${color};${opts.border ? `border:2px solid ${opts.border};` : ''}` +
-        `${opts.dash ? 'background:transparent;border:2px dashed ' + color + ';' : ''}"></span>` +
-        `<span>${label}</span></div>`;
-      div.innerHTML =
-        `<div style="font-weight:600;color:#0f172a;margin-bottom:4px">Legend</div>` +
-        row('#2563eb', 'Searched location', { round: true }) +
-        row('#f97316', 'Parcel boundary', { dash: true }) +
-        row('#ef4444', 'Radius buffer', { dash: true }) +
-        row('#a855f7', 'Census block groups') +
-        row('#f59e0b', 'Traffic — on-system', { round: true, border: '#b45309' }) +
-        row('#3b82f6', 'Traffic — off-system', { round: true, border: '#1d4ed8' });
-      return div;
-    };
-    legend.addTo(map);
-
     mapRef.current = map;
     // Leaflet sometimes renders into a 0-height container on first paint.
     setTimeout(() => map.invalidateSize(), 0);
-    return () => map.remove();
+
+    // Redraw when the container resizes (e.g. dragging the splitter).
+    const container = document.getElementById('map');
+    const ro = new ResizeObserver(() => map.invalidateSize());
+    if (container) ro.observe(container);
+
+    return () => {
+      ro.disconnect();
+      map.remove();
+    };
   }, []);
 
   // Update marker + parcel polygon when the location changes.
@@ -216,30 +187,22 @@ export default function MapView({
     map.flyToBounds(layers.circle.getBounds(), { padding: [18, 18], duration: 0.7 });
   }, [result, debug]);
 
-  // Draw the traffic search radius + AADT station points.
+  // Draw AADT station points on the map (the radius buffer is the population
+  // circle — no separate traffic circle, and no auto-fit so the view stays put).
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const layers = layersRef.current;
 
-    layers.trafficCircle?.remove();
     layers.trafficStations?.remove();
 
     if (!traffic) return;
 
-    const { center, radius, trafficCounts } = traffic;
-
-    layers.trafficCircle = L.circle([center.lat, center.lng], {
-      radius: radius.meters,
-      color: '#16a34a', // green-600
-      weight: 2,
-      dashArray: '5 5',
-      fillColor: '#16a34a',
-      fillOpacity: 0.05,
-    }).addTo(map);
+    const { trafficCounts } = traffic;
 
     const stations = (trafficCounts || []).map((t) => {
       const onSystem = t.dataset !== '5-Year (off-system)';
+      const aadt = t.aadt != null ? t.aadt.toLocaleString() : '—';
       return L.circleMarker([t.lat, t.lng], {
         radius: 7,
         // On-system (annual) = amber; off-system (5-year) = blue.
@@ -247,7 +210,15 @@ export default function MapView({
         weight: 2,
         fillColor: onSystem ? '#f59e0b' : '#3b82f6',
         fillOpacity: 0.9,
-      }).bindPopup(
+      })
+        // Always-visible AADT label (road name is in the click popup).
+        .bindTooltip(`${aadt}`, {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -8],
+          className: 'aadt-label',
+        })
+        .bindPopup(
         `<b>${t.roadName}</b><br/>` +
           `AADT: ${t.aadt != null ? t.aadt.toLocaleString() : '—'} vehicles/day<br/>` +
           `Year: ${t.year ?? '—'}<br/>` +
@@ -259,51 +230,62 @@ export default function MapView({
     layers.trafficStations = L.layerGroup(stations).addTo(map);
     layers.parcel?.bringToFront();
     layers.marker?.setZIndexOffset(1000);
-
-    map.fitBounds(layers.trafficCircle.getBounds(), { padding: [40, 40] });
   }, [traffic]);
 
-  // Draw nearby place markers (respecting per-category visibility toggles).
+  // Adjacent parcels — clickable polygons that re-select the parcel.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const layers = layersRef.current;
+    layers.adjacent?.remove();
+    if (!adjacent?.length) return;
 
-    layers.places?.remove();
-    if (!places?.places) return;
-
-    const markers = [];
-    for (const [cat, list] of Object.entries(places.places)) {
-      if (placeVisible && placeVisible[cat] === false) continue;
-      const meta = PLACE_META[cat];
-      if (!meta) continue;
-      const icon = placeIcon(meta.color, meta.emoji);
-      for (const p of list) {
-        markers.push(
-          L.marker([p.lat, p.lng], { icon }).bindPopup(
-            `<b>${p.name || meta.label}</b><br/>` +
-              `${meta.label}${p.type ? ` · ${p.type}` : ''}<br/>` +
-              `Distance: ${p.distanceMiles} mi`
-          )
-        );
+    layers.adjacent = L.geoJSON(
+      {
+        type: 'FeatureCollection',
+        features: adjacent
+          .filter((p) => p.polygon)
+          .map((p) => ({ type: 'Feature', geometry: p.polygon, properties: p })),
+      },
+      {
+        style: { color: '#0d9488', weight: 1.5, fillColor: '#14b8a6', fillOpacity: 0.12 },
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties;
+          layer.bindPopup(
+            `<b>Parcel ${p.parcelId}</b><br/>${p.address || ''}<br/>` +
+              `${p.propertyType || ''}${p.owner ? `<br/>${p.owner}` : ''}` +
+              `<br/><i>Click to inspect</i>`
+          );
+          layer.on('click', () => onSelectParcel?.(p));
+          layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.3 }));
+          layer.on('mouseout', () => layer.setStyle({ fillOpacity: 0.12 }));
+        },
       }
-    }
-    layers.places = L.layerGroup(markers).addTo(map);
-  }, [places, placeVisible]);
+    ).addTo(map);
+    layers.parcel?.bringToFront();
+  }, [adjacent, onSelectParcel]);
 
-  // Frame all nearby places when a new search arrives (not on toggle).
+  // Business markers (Google Places).
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !places?.places) return;
-    const pts = [];
-    for (const list of Object.values(places.places)) {
-      for (const p of list) pts.push([p.lat, p.lng]);
-    }
-    if (places.center) pts.push([places.center.lat, places.center.lng]);
-    if (pts.length > 1) {
-      map.flyToBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 16, duration: 0.7 });
-    }
-  }, [places]);
+    if (!map) return;
+    const layers = layersRef.current;
+    layers.businesses?.remove();
+    if (!businesses?.length) return;
+
+    const markers = businesses
+      .filter((b) => b.lat != null && b.lng != null)
+      .map((b) =>
+        L.circleMarker([b.lat, b.lng], {
+          radius: 6,
+          color: '#7c3aed',
+          weight: 2,
+          fillColor: '#a855f7',
+          fillOpacity: 0.9,
+        }).bindPopup(`<b>${b.name}</b><br/>${b.businessType || ''}<br/>${b.address || ''}`)
+      );
+    layers.businesses = L.layerGroup(markers).addTo(map);
+  }, [businesses]);
 
   return <div id="map" className="h-full w-full" />;
 }

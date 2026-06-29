@@ -1,15 +1,20 @@
-import { useState } from 'react';
-
 const fmt = (n) => (typeof n === 'number' ? n.toLocaleString() : '—');
 const money = (n) => (typeof n === 'number' ? `$${n.toLocaleString()}` : '—');
 const pct = (n) => (typeof n === 'number' ? `${n}%` : '—');
 
 /**
  * Demographics card (ACS 5-Year). Auto-generated — area-weighted across the
- * Census block groups intersecting the search radius.
+ * Census block groups intersecting the search radius. Includes the official
+ * Tract / Block Group cross-check (formerly the separate Population panel).
  */
-export default function RealEstateSummary({ summary, loading, error, hasLocation }) {
-  const [showDebug, setShowDebug] = useState(false);
+export default function RealEstateSummary({
+  summary,
+  loading,
+  error,
+  hasLocation,
+  showDebug,
+  setShowDebug,
+}) {
   const demo = summary?.demographics;
 
   return (
@@ -119,7 +124,7 @@ export default function RealEstateSummary({ summary, loading, error, hasLocation
 
           {summary?.sources?.population && (
             <p className="mt-3 text-[10px] text-slate-400">
-              Source: {summary.sources.population}
+              Radius demographics source: {summary.sources.population}
             </p>
           )}
         </div>
